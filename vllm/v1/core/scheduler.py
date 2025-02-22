@@ -52,7 +52,8 @@ class Scheduler:
             num_gpu_blocks=num_gpu_blocks,
             max_model_len=self.max_model_len,
             sliding_window=self.cache_config.sliding_window,
-            enable_caching=self.cache_config.enable_prefix_caching)
+            enable_caching=self.cache_config.enable_prefix_caching,
+            rag_aware=self.cache_config.rag_aware)
         self.block_size = self.cache_config.block_size
 
         # req_id -> Request

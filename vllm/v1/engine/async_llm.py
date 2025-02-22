@@ -29,6 +29,7 @@ from vllm.v1.executor.abstract import Executor
 from vllm.v1.metrics.loggers import (LoggingStatLogger, PrometheusStatLogger,
                                      StatLoggerBase)
 from vllm.v1.metrics.stats import IterationStats, SchedulerStats
+from vllm.v1.cedar_utils.tokenizer_utils import set_tokenizer
 
 logger = init_logger(__name__)
 
@@ -65,6 +66,9 @@ class AsyncLLM(EngineClient):
             parallel_config=vllm_config.parallel_config,
             lora_config=vllm_config.lora_config)
         self.tokenizer.ping()
+        
+        # Set the global tokenizer instance
+        set_tokenizer(self.tokenizer)
 
         # Processor (converts Inputs --> EngineCoreRequests).
         self.processor = Processor(

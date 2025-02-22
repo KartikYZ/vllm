@@ -1042,6 +1042,7 @@ class CacheConfig:
             prefix caching enabled.
         enable_prefix_caching: Whether to enable prefix caching.
         cpu_offload_gb: Size of the CPU offload buffer in GiB.
+        rag_aware: Whether to enable RAG-aware caching.
     """
 
     def compute_hash(self) -> str:
@@ -1074,6 +1075,7 @@ class CacheConfig:
         enable_prefix_caching: bool = False,
         cpu_offload_gb: float = 0,
         calculate_kv_scales: Optional[bool] = None,
+        rag_aware: bool = False,  
     ) -> None:
         self.block_size = block_size
         self.gpu_memory_utilization = gpu_memory_utilization
@@ -1096,6 +1098,8 @@ class CacheConfig:
         # Set calculate_kv_scales to False if the value is unset.
         if self.calculate_kv_scales is None:
             self.calculate_kv_scales = False
+
+        self.rag_aware = rag_aware
 
     def metrics_info(self):
         # convert cache_config to dict(key: str, value: str) for prometheus

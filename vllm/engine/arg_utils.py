@@ -203,6 +203,8 @@ class EngineArgs:
 
     calculate_kv_scales: Optional[bool] = None
 
+    rag_aware: bool = False
+
     def __post_init__(self):
         if not self.tokenizer:
             self.tokenizer = self.model
@@ -984,6 +986,11 @@ class EngineArgs:
             'be loaded from the model checkpoint if available. '
             'Otherwise, the scales will default to 1.0.')
 
+        parser.add_argument(
+            "--rag-aware",
+            action="store_true",
+            help="Enable RAG-aware KV cache management")
+
         return parser
 
     @classmethod
@@ -1092,6 +1099,7 @@ class EngineArgs:
             enable_prefix_caching=self.enable_prefix_caching,
             cpu_offload_gb=self.cpu_offload_gb,
             calculate_kv_scales=self.calculate_kv_scales,
+            rag_aware=self.rag_aware,
         )
         parallel_config = ParallelConfig(
             pipeline_parallel_size=self.pipeline_parallel_size,

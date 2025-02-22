@@ -23,6 +23,7 @@ from vllm.v1.engine.core_client import EngineCoreClient
 from vllm.v1.engine.output_processor import OutputProcessor
 from vllm.v1.engine.processor import Processor
 from vllm.v1.executor.abstract import Executor
+from vllm.v1.cedar_utils.tokenizer_utils import set_tokenizer
 
 logger = init_logger(__name__)
 
@@ -53,6 +54,7 @@ class LLMEngine:
             parallel_config=vllm_config.parallel_config,
             lora_config=vllm_config.lora_config)
         self.tokenizer.ping()
+        set_tokenizer(self.tokenizer)  # Set the global tokenizer instance
 
         # Processor (convert Inputs --> EngineCoreRequests)
         self.processor = Processor(model_config=vllm_config.model_config,

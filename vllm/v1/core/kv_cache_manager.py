@@ -11,6 +11,7 @@ from vllm.v1.core.kv_cache_utils import (BlockHashType, FreeKVCacheBlockQueue,
                                          hash_block_tokens,
                                          hash_request_tokens)
 from vllm.v1.request import Request, RequestStatus
+from vllm.v1.core.rag_cache_manager import RAGCacheManager
 
 logger = init_logger(__name__)
 
@@ -25,7 +26,15 @@ class KVCacheManager:
         sliding_window: Optional[int] = None,
         enable_caching: bool = True,
         num_preallocate_tokens: int = 64,
+        rag_aware: bool = False,
     ) -> None:
+        logger.info("=" * 40)
+        logger.info("KVCacheManager Initialization")
+        logger.info(f"RAG-aware: {rag_aware}")
+        logger.info(f"Enable caching: {enable_caching}")
+        logger.info(f"Block size: {block_size}")
+        logger.info("=" * 40)
+        
         self.block_size = block_size
         self.num_gpu_blocks = num_gpu_blocks
         self.max_model_len = max_model_len
@@ -72,6 +81,9 @@ class KVCacheManager:
         self.req_to_blocks: DefaultDict[str,
                                         List[KVCacheBlock]] = defaultdict(list)
 
+        self.rag_aware = rag_aware
+        self.rag_cache = RAGCacheManager(block_size) if rag_aware else None
+
     @property
     def usage(self) -> float:
         return 1.0 - (self.free_block_queue.num_free_blocks /
@@ -96,21 +108,50 @@ class KVCacheManager:
 
         computed_blocks = []
 
-        # The block hashes for the request may already be computed
-        # if the request was preempted and resumed.
-        if not request.kv_block_hashes:
-            request.set_kv_block_hashes(
-                hash_request_tokens(self.block_size, request))
-        block_hashes = request.kv_block_hashes
+        if self.rag_aware:
+            # Detect chunks from tokens
+            chunks = self.rag_cache.detect_chunks_from_tokens(request.all_token_ids)
+            
+            # Check if we have any tokens to process
+            if not request.all_token_ids:
+                return [], 0
+                
+            for chunk in chunks:
+                # Get cached blocks using chunk's key
+                chunk_blocks = self.rag_cache.get_cached_blocks(chunk.key)
+                if chunk_blocks:
+                    # Verify blocks are still valid before using them
+                    valid_blocks = []
+                    for block_id in chunk_blocks:
+                        block = self.block_pool[block_id]
+                        # Only use blocks that are actually cached
+                        if block.ref_cnt > 0:
+                            valid_blocks.append(block)
+                        else:
+                            # If we find an invalid block, stop processing this chunk
+                            break
+                    if len(valid_blocks) == len(chunk_blocks):
+                        computed_blocks.extend(valid_blocks)
+                    else:
+                        # If any block was invalid, stop processing chunks
+                        break
+                else:
+                    break
+        else:
+            # Original block-based lookup logic
+            if not request.kv_block_hashes:
+                request.set_kv_block_hashes(
+                    hash_request_tokens(self.block_size, request))
+            block_hashes = request.kv_block_hashes
 
-        for block_hash in block_hashes:
-            # block_hashes is a chain of block hashes. If a block hash is not
-            # in the cached_block_hash_to_id, the following block hashes are
-            # not computed yet for sure.
-            if cached_block := self._get_cached_block(block_hash):
-                computed_blocks.append(cached_block)
-            else:
-                break
+            for block_hash in block_hashes:
+                # block_hashes is a chain of block hashes. If a block hash is not
+                # in the cached_block_hash_to_id, the following block hashes are
+                # not computed yet for sure.
+                if cached_block := self._get_cached_block(block_hash):
+                    computed_blocks.append(cached_block)
+                else:
+                    break
 
         # NOTE(woosuk): Since incomplete blocks are not eligible for
         # sharing, `num_computed_tokens` is always a multiple of
@@ -152,6 +193,11 @@ class KVCacheManager:
             raise ValueError("num_tokens must be greater than 0")
 
         new_computed_blocks = new_computed_blocks or []
+
+        # If RAG-aware, update chunk mappings for new blocks
+        if self.rag_aware and self.rag_cache:
+            chunks = self.rag_cache.detect_chunks_from_tokens(request.all_token_ids)
+            self.rag_cache.add_chunks(chunks)
 
         # The number of computed tokens is the number of computed tokens plus
         # the new prefix caching hits
@@ -243,9 +289,16 @@ class KVCacheManager:
         blocks = self.req_to_blocks.pop(request.request_id, [])
         ordered_blocks: Iterable[KVCacheBlock] = blocks
         if self.enable_caching:
-            # Free blocks in reverse order so that the tail blocks are
-            # freed first.
-            ordered_blocks = reversed(blocks)
+            if self.rag_aware:
+                # Update RAG cache when freeing blocks
+                block_ids = [b.block_id for b in blocks]
+                self.rag_cache.remove_blocks(block_ids)
+                # Use chunk-based ordering for eviction
+                ordered_blocks = blocks  # No special ordering needed since chunks handle it
+            else:
+                # Free blocks in reverse order so that the tail blocks are
+                # freed first. (LRU?)
+                ordered_blocks = reversed(blocks)
 
         for block in ordered_blocks:
             block.decr_ref()

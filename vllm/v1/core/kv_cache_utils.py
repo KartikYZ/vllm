@@ -300,7 +300,7 @@ def hash_request_tokens(block_size: int,
     need_extra_keys = bool(mm_positions)
     extra_keys = None
     curr_mm_idx = 0
-
+    
     ret = []
     parent_block_hash_value = None
     for start in range(0, len(token_ids), block_size):
@@ -316,7 +316,7 @@ def hash_request_tokens(block_size: int,
                 request, start, end, curr_mm_idx)
 
         block_hash = hash_block_tokens(parent_block_hash_value,
-                                       block_token_ids, extra_keys)
+                                     block_token_ids, extra_keys)
         ret.append(block_hash)
         parent_block_hash_value = block_hash.hash_value
     return ret
